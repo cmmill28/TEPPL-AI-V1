@@ -1,0 +1,48 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Environment
+.env
+.venv/
+venv/
+ENV/
+
+# TEPPL Sensitive Data (CRITICAL - exclude these)
+documents/
+storage/
+*.sqlite3
+image_metadata.json
+
+# Credentials & API Keys
+api_keys.txt
+credentials.json
+
+# Development
+.pytest_cache/
+.coverage
+*.log
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS Files
+.DS_Store
+Thumbs.db
+
+# Large Files
+*.zip
+*.tar.gz
+*.pdf
+*.docx
+
+# ChromaDB specific
+chroma.sqlite3

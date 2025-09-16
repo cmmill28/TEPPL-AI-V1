@@ -1,0 +1,27 @@
+# Installation Requirements for Multi-Format TEPPL Processing
+
+# Core processing packages
+pandas>=1.3.0              # Excel/CSV processing
+python-docx>=0.8.0         # Word document processing  
+beautifulsoup4>=4.9.0      # HTML/ASPX processing
+lxml>=4.6.0               # XML processing (faster parser)
+requests>=2.25.0          # Web content fetching
+openpyxl>=3.0.0          # Excel file handling (.xlsx)
+xlrd>=2.0.0              # Legacy Excel support (.xls)
+xlsxwriter>=1.3.0        # Excel writing capabilities
+
+# Additional format support
+zipfile36>=0.1.0         # Enhanced ZIP handling
+python-magic>=0.4.0      # File type detection
+chardet>=4.0.0          # Character encoding detection
+
+# Optional but recommended
+tqdm>=4.60.0            # Progress bars
+psutil>=5.8.0          # System monitoring
+numpy>=1.21.0          # Numerical operations
+
+# Installation script for Windows/Linux/Mac
+pip install pandas python-docx beautifulsoup4 lxml requests openpyxl xlrd xlsxwriter tqdm psutil numpy chardet
+
+# Or install from requirements file:
+# pip install -r format_requirements.txt

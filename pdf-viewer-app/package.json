@@ -1,0 +1,32 @@
+{
+  "name": "pdf-viewer-app",
+  "version": "1.0.0",
+  "description": "A web application for viewing PDF documents with a toggleable image sidebar and deep-linking capabilities.",
+  "main": "src/js/app.js",
+  "scripts": {
+    "start": "webpack serve --mode development",
+    "build": "webpack --mode production"
+  },
+  "dependencies": {
+    "pdfjs-dist": "^2.11.338"
+  },
+  "devDependencies": {
+    "webpack": "^5.88.2",
+    "webpack-cli": "^5.1.4",
+    "webpack-dev-server": "^4.11.0",
+    "babel-loader": "^9.1.2",
+    "babel-core": "^7.0.0",
+    "babel-preset-env": "^1.7.0",
+    "css-loader": "^6.7.3",
+    "style-loader": "^3.3.1"
+  },
+  "keywords": [
+    "pdf",
+    "viewer",
+    "sidebar",
+    "web",
+    "application"
+  ],
+  "author": "Your Name",
+  "license": "MIT"
+}

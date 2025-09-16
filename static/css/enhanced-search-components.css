@@ -1,0 +1,225 @@
+
+/* File: static/css/enhanced-search-components.css */
+
+/* Search History */
+.history-search-container {
+  padding: var(--space-8);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.history-search-input {
+  width: 100%;
+  padding: var(--space-8) var(--space-12);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-base);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font-size: var(--font-size-base);
+  font-family: var(--font-family-base);
+  transition: border-color var(--duration-fast) var(--ease-standard),
+              box-shadow var(--duration-fast) var(--ease-standard);
+}
+
+.history-search-input:focus {
+  border-color: var(--color-primary);
+  outline: var(--focus-outline);
+}
+
+.history-search-input:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+.history-search-results .history-item {
+  padding: var(--space-8) var(--space-12);
+  cursor: pointer;
+  font-size: var(--font-size-base);
+  color: var(--color-text);
+  border-radius: var(--radius-sm);
+  margin: var(--space-2) 0;
+  transition: background var(--duration-fast) var(--ease-standard);
+}
+
+.history-search-results .history-item:hover,
+.history-search-results .history-item.active {
+  background: var(--color-secondary-hover);
+}
+
+.history-search-results .history-item:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+/* Quick Actions */
+.quick-actions-enhanced {
+  padding: var(--space-8);
+  border-top: 1px solid var(--color-border);
+}
+
+.quick-actions-search {
+  margin-bottom: var(--space-8);
+}
+
+.quick-actions-search-input {
+  width: calc(100% - var(--space-16));
+  padding: var(--space-6) var(--space-12);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-base);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font-size: var(--font-size-sm);
+  font-family: var(--font-family-base);
+  transition: border-color var(--duration-fast) var(--ease-standard),
+              box-shadow var(--duration-fast) var(--ease-standard);
+}
+
+.quick-actions-search-input:focus {
+  border-color: var(--color-primary);
+  outline: var(--focus-outline);
+}
+
+.quick-actions-search-input:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+.custom-actions-list .action-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: var(--space-6) var(--space-8);
+  border-radius: var(--radius-sm);
+  font-size: var(--font-size-sm);
+  color: var(--color-text);
+  transition: background var(--duration-fast) var(--ease-standard);
+}
+
+.custom-actions-list .action-item:hover {
+  background: var(--color-secondary);
+}
+
+.action-item .edit-btn,
+.action-item .delete-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--color-text-secondary);
+  margin-left: var(--space-4);
+  padding: var(--space-2);
+  border-radius: var(--radius-sm);
+  font-size: var(--font-size-sm);
+  transition: color var(--duration-fast) var(--ease-standard),
+              background var(--duration-fast) var(--ease-standard);
+}
+
+.action-item .edit-btn:hover,
+.action-item .delete-btn:hover {
+  color: var(--color-text);
+  background: var(--color-secondary-hover);
+}
+
+.action-item .edit-btn:focus-visible,
+.action-item .delete-btn:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+/* Integrated Search Options */
+.search-options-integrated {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-4);
+  flex-wrap: wrap;
+}
+
+.search-option-toggle {
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  border-radius: var(--radius-base);
+  padding: var(--space-6) var(--space-8);
+  cursor: pointer;
+  font-size: var(--font-size-sm);
+  font-family: var(--font-family-base);
+  font-weight: var(--font-weight-medium);
+  color: var(--color-text);
+  transition: all var(--duration-fast) var(--ease-standard);
+  white-space: nowrap;
+}
+
+.search-option-toggle:hover {
+  background: var(--color-secondary);
+  border-color: var(--color-primary);
+}
+
+.search-option-toggle.active {
+  background: var(--color-primary);
+  color: var(--color-btn-primary-text);
+  border-color: var(--color-primary);
+}
+
+.search-option-toggle:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+.search-option-toggle.active:hover {
+  background: var(--color-primary-hover);
+  border-color: var(--color-primary-hover);
+}
+
+/* Responsive Design - Mobile Portrait */
+@media (max-width: 480px) {
+  .history-search-container {
+    padding: var(--space-6);
+  }
+  
+  .history-search-input {
+    padding: var(--space-6) var(--space-8);
+    font-size: var(--font-size-sm);
+  }
+  
+  .history-search-results .history-item {
+    padding: var(--space-6) var(--space-8);
+    font-size: var(--font-size-sm);
+  }
+  
+  .quick-actions-enhanced {
+    padding: var(--space-6);
+  }
+  
+  .quick-actions-search-input {
+    width: 100%;
+    padding: var(--space-6) var(--space-8);
+    font-size: var(--font-size-xs);
+  }
+  
+  .custom-actions-list .action-item {
+    padding: var(--space-8) var(--space-6);
+    font-size: var(--font-size-xs);
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--space-4);
+  }
+  
+  .action-item .edit-btn,
+  .action-item .delete-btn {
+    margin-left: 0;
+    font-size: var(--font-size-xs);
+    padding: var(--space-4);
+  }
+  
+  .search-options-integrated {
+    padding: var(--space-6);
+    gap: var(--space-6);
+    justify-content: flex-start;
+  }
+  
+  .search-option-toggle {
+    padding: var(--space-4) var(--space-6);
+    font-size: var(--font-size-xs);
+    flex: 1;
+    min-width: 0;
+    text-align: center;
+  }
+}

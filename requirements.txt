@@ -1,0 +1,75 @@
+# requirements.txt
+# Enhanced TEPPL System with Multimodal Support
+
+# Core Flask and Web Framework
+Flask==3.0.0
+Werkzeug==3.0.1
+
+# Document Processing
+PyMuPDF==1.23.26  # fitz for PDF processing
+pdfplumber==0.10.3
+python-docx==1.1.0
+
+# Enhanced Vector Database and Embeddings
+chromadb==0.4.17  # Multimodal vector database
+sentence-transformers==2.2.2  # Text embeddings (fallback)
+open-clip-torch==2.24.0  # OpenCLIP for multimodal embeddings
+
+# AI and Machine Learning
+openai==1.3.7  # OpenAI API client
+numpy==1.24.3
+torch==2.1.0  # PyTorch for embeddings
+torchvision==0.16.0  # Vision models
+
+# Computer Vision (Enhanced Drawing Detection)
+ultralytics==8.0.196  # YOLOv11 for drawing detection
+opencv-python==4.8.1.78  # Computer vision
+Pillow==10.1.0  # Image processing
+
+# Data Processing and Analysis
+pandas==2.1.4
+scikit-learn==1.3.2
+matplotlib==3.8.2  # For visualization
+seaborn==0.13.0  # Statistical plots
+
+# Web Scraping and HTTP
+requests==2.31.0
+beautifulsoup4==4.12.2
+urllib3==2.1.0
+
+# File Processing and Organization
+openpyxl==3.1.2  # Excel file processing
+python-magic==0.4.27  # File type detection
+chardet==5.2.0  # Character encoding detection
+
+# Utilities and Environment
+python-dotenv==1.0.0  # Environment variables
+pathlib2==2.3.7  # Enhanced path handling
+tqdm==4.66.1  # Progress bars
+python-dateutil==2.8.2
+
+# Logging and Monitoring
+colorlog==6.8.0  # Colored logging
+psutil==5.9.6  # System monitoring
+
+# Development and Testing
+pytest==7.4.3
+pytest-cov==4.1.0
+black==23.11.0  # Code formatting
+flake8==6.1.0  # Linting
+
+# Optional: Database Support
+sqlite3  # Built into Python
+# postgresql-adapter==3.1.7  # Uncomment if using PostgreSQL
+
+# Optional: Cloud Storage
+# boto3==1.34.0  # AWS S3 support
+# azure-storage-blob==12.19.0  # Azure Blob storage
+
+# Production Deployment
+gunicorn==21.2.0  # WSGI server
+supervisor==4.2.5  # Process management
+
+# Memory and Performance
+memory-profiler==0.61.0
+line-profiler==4.1.1
