@@ -45,6 +45,8 @@ from functools import wraps
 import secrets
 import hashlib
 import time
+from collections import defaultdict
+from rank_bm25 import BM25Okapi
 
 # Setup ChromaDB logging
 logging.getLogger("chromadb.telemetry.product.posthog").setLevel(logging.CRITICAL)
@@ -671,6 +673,32 @@ class TEPPLMultimodalRAGSystem:
             }
         }
 
+        # Initialize BM25 lexical search index for text chunks
+        self._bm25_ids = []
+        self._bm25_tokens = []
+        self._bm25_id_to_doc = {}
+        self._bm25_id_to_meta = {}
+        self._bm25_index = None
+        try:
+            # Fetch a sample of text documents from Chroma (up to 50k chunks for BM25)
+            batch = self.vs.text_collection.get(include=["documents", "metadatas"], limit=50000)
+            docs = batch.get("documents") or []
+            metas = batch.get("metadatas") or []
+            for i, doc in enumerate(docs):
+                if not doc or len(doc) < 20:
+                    continue  # skip tiny chunks
+                meta = metas[i] or {}
+                chunk_id = meta.get("chunk_id", meta.get("document_id", f"chunk_{i}"))
+                self._bm25_ids.append(chunk_id)
+                self._bm25_tokens.append(doc.lower().split())
+                self._bm25_id_to_doc[chunk_id] = doc
+                self._bm25_id_to_meta[chunk_id] = meta
+            if self._bm25_tokens:
+                self._bm25_index = BM25Okapi(self._bm25_tokens)
+                logger.info(f"✅ BM25 index ready for {len(self._bm25_ids)} text chunks")
+        except Exception as e:
+            logger.warning(f"BM25 init skipped: {e}")
+
         logger.info(f"🚀 Enhanced TEPPL RAG system initialized")
         logger.info(f"🔒 Security enabled: {enable_security}")
         logger.info(f"📝 Audit logging enabled: {enable_audit}")
@@ -992,7 +1020,75 @@ class TEPPLMultimodalRAGSystem:
 
             logger.info(f"🔍 Enhanced multimodal retrieval: {len(filtered_results)} relevant items found")
 
-            return filtered_results
+            # --- Hybrid Dense+Lexical Retrieval ---
+            fused_results = []
+            try:
+                # Start with all initial dense results (from embeddings)
+                candidates = {}
+                for item in search_results:
+                    # Use chunk_id as a unique key (fall back to item ID if needed)
+                    cid = item.get("metadata", {}).get("chunk_id") or item.get("id") or f"id_{len(candidates)}"
+                    candidates[cid] = item
+                    # Ensure a bm25 score field exists (0.0 if not set later)
+                    candidates[cid]["bm25"] = 0.0
+
+                if self._bm25_index:
+                    # Get BM25 scores for the query
+                    tokens = query.lower().split()
+                    bm25_scores = self._bm25_index.get_scores(tokens)
+                    # Take top 40 lexical hits
+                    top_idx = sorted(range(len(bm25_scores)), key=lambda i: bm25_scores[i], reverse=True)[:40]
+                    for i in top_idx:
+                        cid = self._bm25_ids[i]
+                        score = float(bm25_scores[i])
+                        if cid in candidates:
+                            # If this chunk was already in dense results, just add the BM25 score
+                            candidates[cid]["bm25"] = score
+                        else:
+                            # Otherwise, add it as a new candidate
+                            candidates[cid] = {
+                                "id": cid,
+                                "content": self._bm25_id_to_doc.get(cid, ""),
+                                "metadata": self._bm25_id_to_meta.get(cid, {"chunk_id": cid}),
+                                "similarity_score": 0.0,
+                                "bm25": score
+                            }
+
+                # Apply Reciprocal Rank Fusion (RRF) to combine scores
+                def _rrf(rank, k=60): 
+                    return 1.0 / (k + rank)
+                # Rank dictionaries for dense and lexical scores
+                # (Generate rank position for each candidate in each list)
+                dense_rank = {}
+                bm25_rank = {}
+                # Sort candidates by similarity_score (descending) and assign rank
+                for rank, item in enumerate(sorted(candidates.values(), key=lambda x: x.get("similarity_score", 0.0), reverse=True), start=1):
+                    dense_rank[item["metadata"].get("chunk_id")] = rank
+                # Sort candidates by bm25 score (descending) and assign rank
+                for rank, item in enumerate(sorted(candidates.values(), key=lambda x: x.get("bm25", 0.0), reverse=True), start=1):
+                    bm25_rank[item["metadata"].get("chunk_id")] = rank
+
+                # Compute fused RRF score for each candidate
+                for item in candidates.values():
+                    cid = item["metadata"].get("chunk_id")
+                    # Use a large rank (9999) if candidate not present in a given list
+                    rank_d = dense_rank.get(cid, 9999)
+                    rank_l = bm25_rank.get(cid, 9999)
+                    item["rrf"] = _rrf(rank_d) + _rrf(rank_l)
+                    fused_results.append(item)
+
+                # Sort by combined RRF score (descending) and truncate to top N
+                fused_results.sort(key=lambda x: x["rrf"], reverse=True)
+                fused_results = fused_results[:12]  # e.g., top 12 fused results
+            except Exception as e:
+                logger.error(f"Fusion error: {e}")
+                fused_results = search_results[:12]  # fallback to top 12 dense if error
+
+            # Replace original search results with fused results
+            search_results = fused_results
+            # --- End of Hybrid Retrieval block ---
+
+            return search_results
 
         except Exception as e:
             logger.error(f"Error in enhanced multimodal retrieval: {e}")
@@ -1167,22 +1263,45 @@ class TEPPLMultimodalRAGSystem:
         
         context = "\n\n".join(context_parts)
         
-        # Enhanced prompt for TEPPL
-        prompt = f"""As a TEPPL (Traffic Engineering Practices, Policies and Legal) assistant, provide a comprehensive answer to the question below using ONLY the provided context from NCDOT documents.
+        # --- STRICT, BUT PRACTICAL, MARKDOWN CONTRACT ---
+        prompt = f"""
+You are TEPPL AI, answering questions only from the provided NCDOT TEPPL context.
 
-Format your response as:
-- Use bullet points for multiple guidelines/requirements
-- Include specific citations in parentheses like (Document Name, Page X)
-- End with a brief summary statement
-- Be precise and authoritative
-- If information is not in the context, state that clearly
+Write the answer in **standard Markdown** (no HTML), using this structure when applicable:
+
+# Direct answer (one short paragraph)
+## Key requirements
+- Use short, plain-language bullets
+- One fact per bullet
+- Cite the source in parentheses at the end, e.g., (G.S. 20-141, p. 2)
+
+## Technical details
+- Include thresholds, exceptions, and definitions
+- When quoting a statute section number, include the exact number
+
+## Implementation steps
+1. Step-by-step actions an engineer would take
+2. Keep them concrete and testable
+
+## Notes & limitations
+- Call out uncertainties or where the policy defers to local ordinance
+- If the context does not contain an answer, say so plainly.
+
+Formatting rules:
+- Use Markdown headings (#, ##, ###)
+- Use unordered bullets that start with -, *, or +
+- Use ordered lists as 1., 2., 3. when appropriate
+- Use **bold** for critical numbers/limits; use *italics* sparingly.
+- Use fenced code blocks ``` only for command-like snippets (rare)
+- Do **not** invent content outside the context
 
 Question: {query}
 
-Context from NCDOT TEPPL documents:
+Context:
 {context}
 
-Answer:"""
+Return only the Markdown answer.
+"""
         
         try:
             response = self.client.chat.completions.create(
@@ -1338,6 +1457,74 @@ Answer:"""
             else:
                 search_results = self.vs.similarity_search(query, n_results=kwargs.get('n_results', 20))
             
+            # --- Hybrid Dense+Lexical Retrieval ---
+            fused_results = []
+            try:
+                # Start with all initial dense results (from embeddings)
+                candidates = {}
+                for item in search_results:
+                    # Use chunk_id as a unique key (fall back to item ID if needed)
+                    cid = item.get("metadata", {}).get("chunk_id") or item.get("id") or f"id_{len(candidates)}"
+                    candidates[cid] = item
+                    # Ensure a bm25 score field exists (0.0 if not set later)
+                    candidates[cid]["bm25"] = 0.0
+
+                if self._bm25_index:
+                    # Get BM25 scores for the query
+                    tokens = query.lower().split()
+                    bm25_scores = self._bm25_index.get_scores(tokens)
+                    # Take top 40 lexical hits
+                    top_idx = sorted(range(len(bm25_scores)), key=lambda i: bm25_scores[i], reverse=True)[:40]
+                    for i in top_idx:
+                        cid = self._bm25_ids[i]
+                        score = float(bm25_scores[i])
+                        if cid in candidates:
+                            # If this chunk was already in dense results, just add the BM25 score
+                            candidates[cid]["bm25"] = score
+                        else:
+                            # Otherwise, add it as a new candidate
+                            candidates[cid] = {
+                                "id": cid,
+                                "content": self._bm25_id_to_doc.get(cid, ""),
+                                "metadata": self._bm25_id_to_meta.get(cid, {"chunk_id": cid}),
+                                "similarity_score": 0.0,
+                                "bm25": score
+                            }
+
+                # Apply Reciprocal Rank Fusion (RRF) to combine scores
+                def _rrf(rank, k=60): 
+                    return 1.0 / (k + rank)
+                # Rank dictionaries for dense and lexical scores
+                # (Generate rank position for each candidate in each list)
+                dense_rank = {}
+                bm25_rank = {}
+                # Sort candidates by similarity_score (descending) and assign rank
+                for rank, item in enumerate(sorted(candidates.values(), key=lambda x: x.get("similarity_score", 0.0), reverse=True), start=1):
+                    dense_rank[item["metadata"].get("chunk_id")] = rank
+                # Sort candidates by bm25 score (descending) and assign rank
+                for rank, item in enumerate(sorted(candidates.values(), key=lambda x: x.get("bm25", 0.0), reverse=True), start=1):
+                    bm25_rank[item["metadata"].get("chunk_id")] = rank
+
+                # Compute fused RRF score for each candidate
+                for item in candidates.values():
+                    cid = item["metadata"].get("chunk_id")
+                    # Use a large rank (9999) if candidate not present in a given list
+                    rank_d = dense_rank.get(cid, 9999)
+                    rank_l = bm25_rank.get(cid, 9999)
+                    item["rrf"] = _rrf(rank_d) + _rrf(rank_l)
+                    fused_results.append(item)
+
+                # Sort by combined RRF score (descending) and truncate to top N
+                fused_results.sort(key=lambda x: x["rrf"], reverse=True)
+                fused_results = fused_results[:12]  # e.g., top 12 fused results
+            except Exception as e:
+                logger.error(f"Fusion error: {e}")
+                fused_results = search_results[:12]  # fallback to top 12 dense if error
+
+            # Replace original search results with fused results
+            search_results = fused_results
+            # --- End of Hybrid Retrieval block ---
+
             # Generate answer using OpenAI
             answer, confidence = self._generate_enhanced_answer(query, search_results)
             
@@ -1872,8 +2059,6 @@ Answer:"""
             "total_sources": 0,
             "has_visual_content": False
         }
-
-    # ...existing code...
 
     def get_system_stats(self) -> Dict[str, Any]:
         """Get comprehensive system statistics with security information"""

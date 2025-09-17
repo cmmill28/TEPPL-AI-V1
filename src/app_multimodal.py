@@ -158,7 +158,8 @@ def adapt_response_for_ui(raw_response, query, processing_time):
     """Adapt response for professional NCDOT output with enhanced structure"""
     
     # Extract and enhance answer with professional markdown
-    answer = raw_response.get('answer', '')
+    answer = raw_response.get('answer', '') or ""
+    answer = normalize_markdown(answer)
     if not answer and raw_response.get('sources'):
         answer = generate_professional_answer(raw_response['sources'], query)
     
@@ -172,7 +173,7 @@ def adapt_response_for_ui(raw_response, query, processing_time):
     
     # Enhanced source formatting with proper metadata
     top_sources = sorted(sources, key=lambda x: x.get('similarity_score', 0), reverse=True)[:5]
-    formatted_sources = format_enhanced_sources(top_sources)
+    formatted_sources = format_professional_sources(top_sources)
     
     return {
         "success": True,
@@ -183,8 +184,8 @@ def adapt_response_for_ui(raw_response, query, processing_time):
         "processing_time": processing_time,
         "query": query,
         "source_count": len(formatted_sources),
-        "presentation_mode": "professional",  # New flag
-        "content_type": "markdown"  # New flag
+        "presentation_mode": "professional",
+        "content_type": "markdown"
     }
 
 def generate_professional_answer(sources, query):
@@ -296,14 +297,10 @@ def format_professional_sources(sources):
     formatted = []
     for source in sources:
         metadata = source.get('metadata', {})
-        
         # Extract proper document title
         title = extract_document_title(metadata)
         pages = str(metadata.get('page_number', 'N/A'))
-        
-        # Calculate relevance percentage
         relevance = int((source.get('similarity_score', 0) * 100))
-        
         formatted.append({
             "title": title,
             "pages": pages,
@@ -312,6 +309,11 @@ def format_professional_sources(sources):
             "relevance": f"{relevance}%",
             "similarity_score": source.get('similarity_score', 0.0),
             "file_path": metadata.get('source', ''),
+            # NEW: direct link and page number for viewer
+            "internal_link": f"/documents/{metadata.get('source', '')}" if metadata.get('source') else "",
+            "page_number": metadata.get('page_number', 1),
+            # NEW: optional hash for integrity checking
+            "sha256": metadata.get('content_hash', ""),
             "document_id": metadata.get('document_id', ''),
             "source": metadata.get('source', ''),
             "chunk_id": metadata.get('chunk_id', ''),
@@ -567,12 +569,16 @@ def format_images_for_ui(images):
     """Format images to match UI expectations with enhanced metadata"""
     formatted = []
     for image in images:
-        # Handle both direct image results and enhanced image metadata
         if isinstance(image, dict):
             metadata = image.get('metadata', {})
-            
-            # Get enhanced metadata if available
             image_id = image.get('id', '')
+
+            # Derive filename and internal link if possible
+            source_path = metadata.get('source', '')
+            filename = extract_filename_from_path(source_path) if source_path else None
+            internal_link = f"/documents/{filename}" if filename else ""
+
+            # Enhanced metadata lookup
             enhanced_meta = {}
             if image_id and image_id in IMAGE_METADATA:
                 img_info = IMAGE_METADATA[image_id]
@@ -590,7 +596,7 @@ def format_images_for_ui(images):
                         "complexity_score": analysis.get("complexity_score", 0),
                         "text_vs_object": analysis.get("text_vs_object", {})
                     }
-            
+
             formatted_image = {
                 "id": image_id,
                 "type": image.get('content_type', image.get('type', 'image')),
@@ -600,10 +606,11 @@ def format_images_for_ui(images):
                 "page_number": metadata.get('page_number', 'N/A'),
                 "document_id": metadata.get('document_id', 'unknown'),
                 "file_path": metadata.get('file_path', ''),
-                "teppl_category": metadata.get('teppl_category', 'general')
+                "teppl_category": metadata.get('teppl_category', 'general'),
+                # New: deep-link for image's source document
+                "internal_link": internal_link
             }
-            
-            # Add enhanced metadata if available
+
             if enhanced_meta:
                 formatted_image.update({
                     "web_path": enhanced_meta["web_path"],
@@ -623,9 +630,9 @@ def format_images_for_ui(images):
                     "thumbnail_path": f"thumbnails/{image_id}_thumb.jpg",
                     "is_enhanced": False
                 })
-            
+
             formatted.append(formatted_image)
-    
+
     return formatted
 
 @app.route("/documents/<path:filename>")
@@ -1441,6 +1448,35 @@ def generate_comprehensive_response(sources, query, context):
         max_tokens=2000
     )
     return response.choices[0].message.content
+
+# Markdown normalization helpers
+import re
+
+MD_H1_RE = re.compile(r"(?m)^\s*#\s+")
+MD_BULLET_FIX = re.compile(r"(?m)^\s*•\s+")
+MD_BAD_BULLETS = re.compile(r"(?m)^\s*[-–—]\s+")
+MD_TAB_BULLETS = re.compile(r"(?m)^\t+\-\s+" )
+
+def normalize_markdown(text: str) -> str:
+    """Normalize LLM output to standard Markdown the frontend can render well."""
+    if not isinstance(text, str) or not text.strip():
+        return text
+
+    md = text
+
+    # 1) Convert legacy bullets (•) or dash variants to normal "- "
+    md = MD_BULLET_FIX.sub("- ", md)
+    md = MD_BAD_BULLETS.sub("- ", md)
+    md = MD_TAB_BULLETS.sub("- ", md)
+
+    # 2) Ensure there's at least one H1; if missing, add a generic one
+    if not MD_H1_RE.search(md):
+        md = "# Answer\n\n" + md
+
+    # 3) Trim redundant blank lines (max 2 in a row)
+    md = re.sub(r"\n{3,}", "\n\n", md)
+
+    return md
 
 if __name__ == "__main__":
     print(f"🌟 Starting Enhanced TEPPL App ({system_type} mode)")
