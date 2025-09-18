@@ -11,8 +11,8 @@
     <link rel="icon" type="image/x-icon" href="{{ url_for('static', filename='favicon.ico') }}">
 
     <!-- JavaScript Files -->
-    <script src="{{ url_for('static', filename='js/professional-content-renderer.js') }}" defer></script>
-    <script src="{{ url_for('static', filename='js/integrated-search-bar.js') }}" defer></script>
+    <script src="{{ url_for('static', filename='js/professional-content-renderer.js') }}?v=pro120" defer></script>
+    <script src="{{ url_for('static', filename='js/integrated-search-bar.js') }}?v=pro120" defer></script>
     <script src="{{ url_for('static', filename='js/autocomplete.js') }}" defer></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.5.136/pdf.min.js"></script>
     <script>window.pdfjsLib && (pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.5.136/pdf.worker.min.js');</script>
@@ -1316,9 +1316,6 @@
     });
     </script>
 
-  <!-- Professional Content Renderer -->
-  <script src="{{ url_for('static', filename='js/professional-content-renderer.js') }}"></script>
-
   <!-- Integrated Search Bar -->
   <script src="{{ url_for('static', filename='js/integrated-search-bar.js') }}"></script>
 
@@ -1347,5 +1344,16 @@
     });
   </script>
 
+  <!-- Remove duplicate legacy includes of professional-content-renderer.js & integrated-search-bar.js below if present -->
+<script>
+  // Fallback global PDF opener (quick win) if integrated search overrides not yet applied
+  window.openPDFQuick = function(link,page){ if(!link) return; window.open(`${link}#page=${page||1}`, '_blank','noopener'); };
+  // If searchBar later defines viewPDF, buttons will use it; else patch after load
+  document.addEventListener('DOMContentLoaded', ()=>{
+    if(window.searchBar && !window.searchBar.viewPDF){
+      window.searchBar.viewPDF = (l,p=1)=> window.openPDFQuick(l,p);
+    }
+  });
+</script>
 </body>
 </html>

@@ -292,28 +292,36 @@ def _clean_and_format_content(content):
     
     return content
 
-def format_professional_sources(sources):
-    """Format sources professionally with deep links and page numbers for UI."""
+def format_professional_sources(top_sources):
+    """Normalize sources for professional UI (ensures internal_link + page_number)."""
     formatted = []
-    for source in sources:
-        md = source.get('metadata', {})
-        title = extract_document_title(md)
-        relevance = int((source.get('similarity_score', 0) * 100))
+    for s in (top_sources or []):
+        md = s.get('metadata', {}) or {}
+        title = (
+            md.get('title') or
+            (md.get('source') or '').split('/')[-1].replace('_', ' ').replace('-', ' ').rsplit('.', 1)[0] or
+            md.get('document_id') or
+            'NCDOT TEPPL Document'
+        )
+        raw_rel = s.get('relevance', s.get('similarity_score', 0.0))
+        if isinstance(raw_rel, float) and raw_rel <= 1.0:
+            rel_str = f"{round(raw_rel * 100)}%"
+        elif isinstance(raw_rel, (int, float)):
+            rel_str = f"{round(raw_rel)}%"
+        else:
+            rel_str = str(raw_rel)
+        src_path = md.get('source', '')
+        page = md.get('page_number', 1)
         formatted.append({
             "title": title,
-            "pages": str(md.get('page_number', 'N/A')),
-            "document_type": md.get('source_type', 'Policy Document'),
-            "content": source.get('content', ''),
-            "relevance": f"{relevance}%",
-            "similarity_score": source.get('similarity_score', 0.0),
-            "file_path": md.get('source', ''),
-            "internal_link": f"/documents/{md.get('source','')}" if md.get('source') else "",
-            "page_number": md.get('page_number', 1),
-            "sha256": md.get('content_hash', ""),
+            "relevance": rel_str,
+            "similarity_score": s.get('similarity_score', 0.0),
             "document_id": md.get('document_id', ''),
-            "source": md.get('source', ''),
             "chunk_id": md.get('chunk_id', ''),
-            "year": "2024"
+            "source": src_path,
+            "pages": md.get('pages') or page,
+            "internal_link": f"/documents/{src_path}" if src_path else "",
+            "page_number": page,
         })
     return formatted
 
