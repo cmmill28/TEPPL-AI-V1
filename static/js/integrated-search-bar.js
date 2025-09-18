@@ -466,6 +466,12 @@ class IntegratedSearchBar {
             this.handleSubmitWithGuards();
         }
     }
+
+    viewPDF(filePath, page = 1) {
+        if (!filePath) return;
+        // Quick win: new tab, browser PDF viewer
+        window.open(`${filePath}#page=${page}`, '_blank', 'noopener');
+    }
 }
 
 // SINGLETON INITIALIZATION
