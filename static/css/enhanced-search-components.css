@@ -287,3 +287,14 @@
     text-align: center;
   }
 }
+
+.source-item { margin: 8px 0; }
+.source-item summary { cursor: pointer; padding: 6px 0; }
+.source-body { padding: 8px 0 0 12px; }
+.source-rel { opacity: .7; margin-left: 8px; }
+.btn.btn-primary {
+  display: inline-block; padding: 6px 10px; border-radius: 6px;
+  text-decoration: none; border: 1px solid currentColor;
+  background: var(--color-primary, #2563eb); 
+  color: var(--color-btn-primary-text, white);
+}

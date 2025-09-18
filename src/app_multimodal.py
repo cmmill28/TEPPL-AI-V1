@@ -15,7 +15,7 @@ import time
 import re
 from pathlib import Path
 from typing import Dict, Any, Tuple
-from flask import Flask, jsonify, render_template, redirect, request, send_from_directory, abort
+from flask import Flask, jsonify, render_template, redirect, request, send_from_directory, abort, send_file
 import openai
 
 # ---------------------------
@@ -89,6 +89,48 @@ def normalize_markdown(text: str) -> str:
     text = re.sub(r"\n\s*-\s+", r"\n• ", text)                    # bullets
     text = re.sub(r"(https?://[^\s]+)", r"[\1](\1)", text)        # autolink
     return text
+
+def _extract_filename_from_path(source_path: str | None) -> str | None:
+    """Extract just the filename from a source path."""
+    if not source_path:
+        return None
+    try:
+        return Path(source_path).name
+    except Exception:
+        if "/" in source_path:
+            return source_path.rsplit("/", 1)[-1]
+        if "\\" in source_path:
+            return source_path.rsplit("\\", 1)[-1]
+        return source_path
+
+def _format_sources_for_ui(sources: list[dict]) -> list[dict]:
+    """Format sources with clean titles and proper internal links for UI."""
+    formatted = []
+    for s in sources or []:
+        md = (s.get("metadata") or {})
+        title = (md.get("title")
+                 or (_extract_filename_from_path(md.get("source")) or "")
+                        .replace("_", " ").replace("-", " ").rsplit(".", 1)[0]
+                 or md.get("document_id")
+                 or "NCDOT TEPPL Document")
+        page = md.get("page_number", 1)
+        src_path = md.get("source") or ""
+        filename = _extract_filename_from_path(src_path)
+        internal_link = f"/documents/{filename}" if filename else ""
+        formatted.append({
+            "title": title,
+            "relevance": f"{round((s.get('similarity_score', 0.0) or 0.0) * 100)}%",
+            "similarity_score": s.get("similarity_score", 0.0),
+            "document_id": md.get("document_id", ""),
+            "chunk_id": md.get("chunk_id", ""),
+            "source": src_path,
+            "pages": md.get("pages") or page,
+            "internal_link": internal_link,
+            "page_number": page,
+            "file_path": filename or src_path,
+            "content": s.get("content", "")
+        })
+    return formatted
 
 def format_professional_sources(top_sources):
     """Normalize sources for professional UI (ensures internal_link + page_number)."""
@@ -292,6 +334,10 @@ def create_app() -> Flask:
         }
     )
 
+    # Disable caching for static files in development
+    if app.config["DEBUG"]:
+        app.config['SEND_FILE_MAX_AGE_DEFAULT'] = 0
+
     # Logging
     logging.basicConfig(level=logging.DEBUG if app.config["DEBUG"] else logging.INFO)
     logger = logging.getLogger(__name__)
@@ -392,6 +438,34 @@ def create_app() -> Flask:
             }
         )
 
+    @app.get("/api/system-info")
+    def system_info():
+        docs_root = Path(app.config["DOCUMENTS_PATH"])
+        total_files = 0
+        total_size = 0
+        for p in docs_root.rglob("*"):
+            if p.is_file():
+                total_files += 1
+                try:
+                    total_size += p.stat().st_size
+                except Exception:
+                    pass
+        file_stats = {
+            "total_files": total_files,
+            "total_size_mb": round(total_size / (1024 * 1024), 2),
+        }
+        return jsonify({
+            "system_type": app.config.get("RAG_SYSTEM_TYPE"),
+            "multimodal_available": MULTIMODAL_AVAILABLE,
+            "file_stats": file_stats,
+            "image_counts": {
+                "kept": sum(1 for v in app.config.get("IMAGE_METADATA", {}).values() if v.get("kept")),
+                "total": len(app.config.get("IMAGE_METADATA", {}))
+            },
+            "categories": app.config.get("IMAGE_CATEGORY_COUNTS", {}),
+            "debug": app.config.get("DEBUG")
+        })
+
     # --- Search / Query endpoint ---
     @app.post("/query")
     def query_endpoint():
@@ -400,48 +474,51 @@ def create_app() -> Flask:
         if rag is None:
             return jsonify({"success": False, "error": "RAG system is not available."}), 500
 
+        data = request.get_json(silent=True) or {}
+        q = (data.get("query") or "").strip()
+        if not q:
+            return jsonify({"success": False, "error": "Query is required"}), 400
+
+        n = int(data.get("num_results", 20))
+        include_images = bool(data.get("include_images", True))
+        include_drawings = bool(data.get("include_drawings", True))
+        include_text = bool(data.get("include_text", True))
+
+        start = time.time()
         try:
-            data = request.get_json(silent=True) or {}
-            raw_query = (data.get("query") or "").strip()
-            if not raw_query:
-                return jsonify({"success": False, "error": "Query is required"}), 400
-
-            n_results = int(data.get("num_results", 20))
-            include_images = bool(data.get("include_images", True))
-            include_drawings = bool(data.get("include_drawings", True))
-            include_text = bool(data.get("include_text", True))
-
-            start = time.time()
-
             if hasattr(rag, "enhanced_multimodal_retrieval"):
-                resp = rag.enhanced_multimodal_retrieval(
-                    query=raw_query,
-                    user_context={
-                        "user_id": request.remote_addr or "anonymous",
-                        "ip_address": request.remote_addr or "127.0.0.1",
-                    },
-                    n_results=n_results,
+                raw = rag.enhanced_multimodal_retrieval(
+                    query=q,
+                    user_context={"ip": request.remote_addr or "127.0.0.1"},
+                    n_results=n,
                     include_images=include_images,
                     include_drawings=include_drawings,
                     include_text=include_text,
                 )
             elif hasattr(rag, "query"):
-                resp = rag.query(raw_query, n_results=n_results)
+                raw = rag.query(q, n_results=n)
+            elif hasattr(rag, "retrieve"):
+                raw = rag.retrieve(q, top_k=n)
             else:
                 return jsonify({"success": False, "error": "RAG system missing query interface"}), 500
 
-            if not resp.get("success", True):
-                return jsonify({
-                    "success": False,
-                    "error": resp.get("error", "Unknown retrieval error"),
-                    "answer": "",
-                    "sources": [],
-                    "images": []
-                }), 500
+            ui_sources = _format_sources_for_ui(raw.get("sources", []))
+            answer = normalize_markdown(raw.get("answer", "") or "")
+            if not answer and ui_sources:
+                answer = generate_professional_answer(raw.get("sources", []), q)
 
-            ui_payload = adapt_response_for_ui(resp, raw_query, time.time() - start)
-            return jsonify(ui_payload)
-
+            return jsonify({
+                "success": True,
+                "answer": answer,
+                "confidence": 0.0,  # optional: compute from similarities if you want
+                "sources": ui_sources,
+                "images": raw.get("images", []),
+                "processing_time": time.time() - start,
+                "query": q,
+                "source_count": len(ui_sources),
+                "presentation_mode": "professional",
+                "content_type": "markdown"
+            })
         except Exception as e:
             logger.exception("Query processing failed")
             return jsonify({
@@ -452,16 +529,71 @@ def create_app() -> Flask:
                 "images": []
             }), 500
 
-    # --- Document file server (internal_link support) ---
-    @app.get("/documents/<path:filepath>")
-    def serve_document(filepath: str):
-        if ".." in filepath or filepath.startswith("/"):
+    @app.get("/documents/<path:filename>")
+    def serve_document(filename):
+        if ".." in filename or filename.startswith("/"):
             abort(403)
-        docs_dir = Path(app.config["DOCUMENTS_PATH"])
-        try:
-            return send_from_directory(docs_dir, filepath, as_attachment=False)
-        except Exception:
-            abort(404)
+        docs = Path(app.config["DOCUMENTS_PATH"])
+        candidate = docs / filename
+        if not (candidate.exists() and candidate.is_file()):
+            for sub in ("pdfs", "html", "aspx", "excel", "documents", "other"):
+                p = docs / sub / filename
+                if p.exists() and p.is_file():
+                    candidate = p
+                    break
+        if not (candidate.exists() and candidate.is_file()):
+            return jsonify({"error": "Document not found", "requested": filename}), 404
+
+        resp = send_file(candidate, as_attachment=False, download_name=filename)
+        suf = candidate.suffix.lower()
+        if suf == ".pdf":
+            resp.headers["Content-Type"] = "application/pdf"
+            resp.headers["X-Document-Type"] = "pdf"
+        elif suf in (".html", ".htm"):
+            resp.headers["Content-Type"] = "text/html"
+            resp.headers["X-Document-Type"] = "html"
+        elif suf in (".doc", ".docx"):
+            resp.headers["Content-Type"] = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+            resp.headers["X-Document-Type"] = "word"
+        elif suf in (".xls", ".xlsx"):
+            resp.headers["Content-Type"] = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            resp.headers["X-Document-Type"] = "excel"
+        else:
+            resp.headers["X-Document-Type"] = "other"
+        resp.headers["Cache-Control"] = "public, max-age=86400"
+        resp.headers["Access-Control-Allow-Origin"] = "*"
+        resp.headers["Access-Control-Expose-Headers"] = "X-Document-Type,Content-Length"
+        if (page := request.args.get("page")):
+            resp.headers["X-Target-Page"] = str(page)
+        if (hl := request.args.get("highlight")):
+            resp.headers["X-Highlight-Text"] = hl
+        return resp
+
+    @app.get("/images/<path:image_path>")
+    def serve_image(image_path):
+        if ".." in image_path or image_path.startswith("/"):
+            abort(403)
+        p = Path(app.config["IMAGES_PATH"]) / image_path
+        if p.exists() and p.is_file():
+            r = send_file(p)
+            r.headers["Cache-Control"] = "public, max-age=86400"
+            return r
+        fp = Path(app.config["STORAGE_PATH"]) / "extracted_images" / image_path
+        if fp.exists() and fp.is_file():
+            return send_file(fp)
+        abort(404)
+
+    @app.get("/thumbnails/<path:thumbnail_path>")
+    def serve_thumbnail(thumbnail_path):
+        if ".." in thumbnail_path or thumbnail_path.startswith("/"):
+            abort(403)
+        p = Path(app.config["THUMBNAILS_PATH"]) / thumbnail_path
+        if p.exists() and p.is_file():
+            r = send_file(p)
+            r.headers["Cache-Control"] = "public, max-age=604800"
+            r.headers["X-Thumbnail-Quality"] = "high"
+            return r
+        abort(404)
 
     return app
 

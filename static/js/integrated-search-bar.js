@@ -478,22 +478,21 @@ class IntegratedSearchBar {
 document.addEventListener('DOMContentLoaded', function() {
     if (!window.IntegratedSearchBarInstance) {
         window.searchBar = new IntegratedSearchBar({
-            formSelector: '#search-form',
+            formSelector: '#query-form',              // was '#search-form'
             inputSelector: '#query-input',
-            toggleButtonsSelector: '[data-option]'
+            toggleButtonsSelector: '.search-option-toggle'
         });
-        
-        // Setup quick prompt handlers
-        const quickPrompts = document.querySelectorAll('.quick-prompt-tile, .prompt-tile');
-        quickPrompts.forEach(tile => {
-            tile.addEventListener('click', (e) => {
-                const promptText = e.target.textContent || e.target.innerText;
-                if (window.searchBar && promptText) {
-                    window.searchBar.submitQuery(promptText.trim());
-                }
-            });
-        });
-        
+        // Optional: expose minimal image modal opener (UI shell may override)
+        window.searchBar.viewImage = (path, title='Image') => {
+            const modal = document.getElementById('image-modal');
+            const content = document.getElementById('image-modal-content');
+            const heading = document.getElementById('image-modal-title');
+            if (modal && content) {
+                if (heading) heading.textContent = title;
+                content.innerHTML = `<img src="${path}" alt="${title}" style="max-width:100%;max-height:80vh;object-fit:contain;">`;
+                modal.classList.add('active');
+            }
+        };
         console.log('✅ IntegratedSearchBar singleton initialized');
     }
 });
@@ -502,3 +501,4 @@ document.addEventListener('DOMContentLoaded', function() {
 window.IntegratedSearchBar = IntegratedSearchBar;
 
 }
+

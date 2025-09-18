@@ -68,44 +68,65 @@ class ProfessionalContentRenderer {
   }
 
   createCollapsibleSources(sources) {
-    const details = document.createElement('details');
-    details.className = 'sources-collapsible';
-    // collapsed by default
-    const summary = document.createElement('summary');
-    summary.innerHTML = `📚 Sources (${sources.length})`;
-    details.appendChild(summary);
-
-    const body = document.createElement('div');
-    body.className = 'sources-body';
+    const container = document.createElement('div');
+    container.className = 'sources-collapsible-list';
+    const header = document.createElement("h3");
+    header.textContent = `📚 Sources (${sources.length} found)`;
+    container.appendChild(header);
 
     sources.forEach((s, i) => {
-      const row = document.createElement('div');
-      row.className = 'source-card';
-      const title = s.title || 'NCDOT TEPPL Document';
-      const page  = s.page_number || s.pages || 'N/A';
-      const rel   = s.relevance ? ` • ${s.relevance}` : '';
-      row.innerHTML = `
-        <div class="source-meta">
-          <div class="source-index">${i + 1}</div>
-          <div class="source-title" title="${this._esc(title)}">${this._esc(title)}</div>
-          <div class="source-sub">Page ${page}${rel}</div>
-        </div>
-      `;
+      const details = document.createElement("details");
+      details.className = "source-item";
+      details.open = false; // collapsed by default
+
+      const summary = document.createElement("summary");
+      const rel = s.relevance ? `<span class="source-rel">${s.relevance}</span>` : "";
+      summary.innerHTML = `<strong>${i + 1}. ${s.title}</strong> ${rel}`;
+      details.appendChild(summary);
+
+      const body = document.createElement("div");
+      body.className = "source-body";
+
+      // Open PDF button
       if (s.internal_link) {
-        const btn = document.createElement('button');
-        btn.className = 'source-btn primary';
-        btn.textContent = '📄 View PDF';
-        btn.addEventListener('click', (e) => {
-          e.preventDefault();
-          window.searchBar?.viewPDF(s.internal_link, page || 1);
-        });
-        row.appendChild(btn);
+        const url = s.page_number
+          ? `${s.internal_link}?page=${encodeURIComponent(s.page_number)}`
+          : s.internal_link;
+        const btn = document.createElement("a");
+        btn.href = url;
+        btn.target = "_blank";
+        btn.rel = "noopener";
+        btn.className = "btn btn-primary";
+        btn.textContent = "Open PDF";
+        body.appendChild(btn);
+      } else {
+        const note = document.createElement("div");
+        note.className = "source-note";
+        note.textContent = "No link available for this source.";
+        body.appendChild(note);
       }
-      body.appendChild(row);
+
+      // Optional: brief snippet if present
+      if (s.content) {
+        const p = document.createElement("p");
+        p.className = "source-snippet";
+        p.textContent = s.content.slice(0, 220);
+        body.appendChild(p);
+      }
+
+      // Optional: page display
+      if (s.page_number) {
+        const meta = document.createElement("div");
+        meta.className = "source-meta";
+        meta.textContent = `Page ${s.page_number}`;
+        body.appendChild(meta);
+      }
+
+      details.appendChild(body);
+      container.appendChild(details);
     });
 
-    details.appendChild(body);
-    return details;
+    return container;
   }
 
   _esc(s){return String(s ?? '').replace(/[&<>]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]))}
