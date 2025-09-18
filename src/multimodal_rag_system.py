@@ -47,6 +47,7 @@ import hashlib
 import time
 from collections import defaultdict
 from rank_bm25 import BM25Okapi
+from prompts_professional import PROFESSIONAL_TEPPL_PROMPT
 
 # Setup ChromaDB logging
 logging.getLogger("chromadb.telemetry.product.posthog").setLevel(logging.CRITICAL)
@@ -526,6 +527,41 @@ ENHANCED_MULTIMODAL_SYSTEM_PROMPT = (
     "- End with 'Verification Links' section containing direct links to sources\n"
     "- If visual content is relevant, describe what figures/diagrams show\n"
 )
+
+# New structured answer prompt (v1) enforcing spacing & section order
+TEPPL_ANSWER_V1 = """You are TEPPL AI, an assistant answering questions about NCDOT Traffic Engineering
+Policies, Practices and Legal Authority (TEPPL). Answer strictly from the provided
+context snippets. If a detail isn’t supported by the snippets, omit it.
+
+Return your answer in **GitHub-flavored Markdown** using this structure and spacing:
+
+# Direct answer
+A one-sentence, bolded, direct answer if possible. (No preamble.)
+
+## Key requirements
+- Bullet list of the 2–5 most important rules/thresholds.
+- Keep items short (one sentence each). Bold critical numbers (**12 years**, **35 MPH**, etc).
+
+## Technical details
+- Bullet list calling out statutes/sections (e.g., G.S. 20-141) and page references (p. 2).
+- Keep each item to one line when possible.
+
+## Implementation steps
+1. Short imperative steps the practitioner would take.
+2. Keep to 3–6 steps.
+
+## Notes & limitations
+- Call out caveats (municipal variation, engineering study required, etc).
+
+Formatting rules:
+- Always include a **blank line** before and after each heading and before each list.
+- Use regular hyphen bullets `- ` and numbered lists `1.`, `2.` only.
+- Do not include a “Sources” section; the server will add sources separately.
+
+User question: "{question}"
+Context snippets (may be truncated): 
+{context}
+"""
 
 def security_required(security_level: SecurityLevel = SecurityLevel.PUBLIC):
     """Decorator for methods requiring security checks"""
@@ -1254,70 +1290,22 @@ class TEPPLMultimodalRAGSystem:
             metadata = result.get("metadata", {})
             source = metadata.get("source", "Unknown")
             page = metadata.get("page_number", "N/A")
-            
-            # Truncate very long content
             if len(content) > 500:
                 content = content[:500] + "..."
-            
             context_parts.append(f"[{source}, Page {page}]: {content}")
-        
         context = "\n\n".join(context_parts)
-        
-        # --- STRICT, BUT PRACTICAL, MARKDOWN CONTRACT ---
-        prompt = f"""
-You are TEPPL AI, answering questions only from the provided NCDOT TEPPL context.
 
-Write the answer in **standard Markdown** (no HTML), using this structure when applicable:
-
-# Direct answer (one short paragraph)
-## Key requirements
-- Use short, plain-language bullets
-- One fact per bullet
-- Cite the source in parentheses at the end, e.g., (G.S. 20-141, p. 2)
-
-## Technical details
-- Include thresholds, exceptions, and definitions
-- When quoting a statute section number, include the exact number
-
-## Implementation steps
-1. Step-by-step actions an engineer would take
-2. Keep them concrete and testable
-
-## Notes & limitations
-- Call out uncertainties or where the policy defers to local ordinance
-- If the context does not contain an answer, say so plainly.
-
-Formatting rules:
-- Use Markdown headings (#, ##, ###)
-- Use unordered bullets that start with -, *, or +
-- Use ordered lists as 1., 2., 3. when appropriate
-- Use **bold** for critical numbers/limits; use *italics* sparingly.
-- Use fenced code blocks ``` only for command-like snippets (rare)
-- Do **not** invent content outside the context
-
-Question: {query}
-
-Context:
-{context}
-
-Return only the Markdown answer.
-"""
-        
+        llm_input = PROFESSIONAL_TEPPL_PROMPT.format(question=query, context=context)
         try:
             response = self.client.chat.completions.create(
                 model=self.model,
-                messages=[{"role": "user", "content": prompt}],
-                max_tokens=800,
+                messages=[{"role": "user", "content": llm_input}],
+                max_tokens=1100,
                 temperature=0.1
             )
-            
             answer = response.choices[0].message.content.strip()
-            
-            # Calculate confidence based on context relevance and search results quality
             confidence = self._calculate_answer_confidence(search_results, answer)
-            
             return answer, confidence
-            
         except Exception as e:
             logger.error(f"Error generating enhanced answer: {e}")
             return self._generate_fallback_enhanced_answer(query, search_results)
@@ -1860,10 +1848,11 @@ Return only the Markdown answer.
         
         for i, ctx in enumerate(contexts[:3]):
             content = ctx.get("content", "")[:200]
-            doc_id = ctx.get("metadata", {}).get("document_id", "unknown")
-            page = ctx.get("metadata", {}).get("page_number", "N/A")
+            metadata = ctx.get("metadata", {})
+            source = metadata.get("source", "Unknown")
+            page = metadata.get("page_number", "N/A")
             
-            answer += f"{i+1}. According to {doc_id} (page {page}): {content}\n\n"
+            answer += f"{i+1}. According to {source} (page {page}): {content}\n\n"
         
         answer += "Note: This response was generated without AI language model assistance. For more comprehensive answers, ensure OpenAI API access is configured."
         

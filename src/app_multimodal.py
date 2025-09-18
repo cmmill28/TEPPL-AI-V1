@@ -504,6 +504,9 @@ def enhanced_query():
 
         # Format for ChatGPT-style UI
         ui_response = adapt_response_for_ui(response, query, processing_time)
+        top_sources_for_md = ui_response.get('sources', [])
+        ui_response['answer'] = normalize_professional_markdown(ui_response.get('answer', ''), top_sources_for_md)
+        ui_response['answer'] = ensure_markdown(ui_response.get('answer', ''))
 
         # Log the query
         logger.info(
@@ -1451,31 +1454,80 @@ def generate_comprehensive_response(sources, query, context):
 
 # Markdown normalization helpers
 import re
+LIST_START_RE = re.compile(r'^\s*([-•*]|[0-9]+\.)\s+', re.MULTILINE)
 
-MD_H1_RE = re.compile(r"(?m)^\s*#\s+")
-MD_BULLET_FIX = re.compile(r"(?m)^\s*•\s+")
-MD_BAD_BULLETS = re.compile(r"(?m)^\s*[-–—]\s+")
-MD_TAB_BULLETS = re.compile(r"(?m)^\t+\-\s+" )
+def normalize_markdown(md: str) -> str:
+    if not md:
+        return md
+    lines = md.splitlines()
+    out = []
+    for i, line in enumerate(lines):
+        if LIST_START_RE.match(line):
+            if i > 0 and lines[i-1].strip() != "":
+                out.append("")
+        out.append(line)
+    md = "\n".join(out)
+    md = re.sub(r'^\s*[•*]\s+', '- ', md, flags=re.MULTILINE)
+    md = re.sub(r'^\s*—\s+', '- ', md, flags=re.MULTILINE)
+    md = re.sub(r'\n{3,}', '\n\n', md)
+    md = re.sub(r'^(#{1,3}\s+[^\n]+)\n(?!\n)', r'\1\n\n', md, flags=re.MULTILINE)
+    return md
 
-def normalize_markdown(text: str) -> str:
-    """Normalize LLM output to standard Markdown the frontend can render well."""
-    if not isinstance(text, str) or not text.strip():
-        return text
+import re
 
-    md = text
+MD_H1 = re.compile(r"^\s*#(?!#)\s+", re.MULTILINE)
+MD_H2 = re.compile(r"^\s*##(?!#)\s+", re.MULTILINE)
+H2_TECHNICAL = re.compile(r'(?mi)^\s*##\s*Technical details\s*$', re.IGNORECASE)
+H2_SOURCES = re.compile(r'(?mi)^\s*##\s*Sources\s*$', re.IGNORECASE)
+FOOTNOTE_LINE = re.compile(r'(?m)^\s*\[\^(\d+)\]:' )
 
-    # 1) Convert legacy bullets (•) or dash variants to normal "- "
-    md = MD_BULLET_FIX.sub("- ", md)
-    md = MD_BAD_BULLETS.sub("- ", md)
-    md = MD_TAB_BULLETS.sub("- ", md)
-
-    # 2) Ensure there's at least one H1; if missing, add a generic one
-    if not MD_H1_RE.search(md):
-        md = "# Answer\n\n" + md
-
-    # 3) Trim redundant blank lines (max 2 in a row)
+def ensure_markdown(md: str) -> str:
+    if not md:
+        return ""
+    md = md.replace("\r\n", "\n").replace("\r", "\n")
     md = re.sub(r"\n{3,}", "\n\n", md)
+    md = re.sub(r"([^\n])\n(#|\d+\.\s|-|\*)", r"\1\n\n\2", md)
+    md = re.sub(r"^\s*\*\s+", "- ", md, flags=re.MULTILINE)
+    md = re.sub(r"^\s*[\u2022]\s+", "- ", md, flags=re.MULTILINE)
+    md = re.sub(r"^(\s*\d+)\.(\S)", r"\1. \2", md, flags=re.MULTILINE)
+    md = re.sub(r"[ \t]+$", "", md, flags=re.MULTILINE)
+    return md
 
+def _short_source_title(meta):
+    title = (meta.get("title") or meta.get("document_title") or meta.get("source") or "").strip()
+    if not title:
+        title = (meta.get("document_id") or meta.get("chunk_id") or "NCDOT TEPPL Document").replace("_", " ")
+    return title
+
+def _build_sources_footnotes(sources):
+    lines = []
+    for i, s in enumerate(sources, 1):
+        meta = s.get('metadata', {}) if isinstance(s.get('metadata'), dict) else s
+        title = _short_source_title(meta)
+        page = meta.get('page_number') or meta.get('pages') or ""
+        page_str = f", p. {page}" if str(page).strip() else ""
+        lines.append(f"[^{i}]: {title}{page_str}")
+    return "\n".join(lines)
+
+def normalize_professional_markdown(answer_md: str, top_sources: list) -> str:
+    if not isinstance(answer_md, str):
+        return ""
+    md = answer_md.replace('\r\n', '\n')
+    if H2_TECHNICAL.search(md) and not H2_SOURCES.search(md):
+        md = H2_TECHNICAL.sub('## Sources', md)
+    md = re.sub(r'([^\n])\n(#{1,3}\s)', r'\1\n\n\2', md)
+    md = re.sub(r'([^\n])\n(-\s|\d+\.\s)', r'\1\n\n\2', md)
+    md = re.sub(r'\n{3,}', '\n\n', md)
+    has_sources_h2 = bool(H2_SOURCES.search(md))
+    has_footnotes = bool(FOOTNOTE_LINE.search(md))
+    if not has_sources_h2:
+        md += "\n\n## Sources\n"
+    if not has_footnotes and top_sources:
+        footnotes = _build_sources_footnotes(top_sources)
+        if footnotes:
+            md += ("\n" + footnotes)
+    if not has_sources_h2:
+        md = re.sub(r'(?m)^\[\^1\]:', '## Sources\n\n[^1]:', md, count=1)
     return md
 
 if __name__ == "__main__":

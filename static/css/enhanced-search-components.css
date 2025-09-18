@@ -200,6 +200,40 @@
 .markdown-content.professional-content h4 {
   margin: 1rem 0 0.5rem;
 }
+.markdown-content.pro-content,
+.professional-content .md-body,
+.assistant-message .message-content {
+  font-size: 1.05rem;
+  line-height: 1.6;
+}
+
+.md-body { font-size: 1.06rem; line-height: 1.6; }
+.md-body .teppl-cite { font-size: .78em; vertical-align: super; }
+.sources-list { margin: .25rem 0 1rem 1.25rem; }
+.sources-list .src-num { font-weight: 600; margin-right: .25rem; }
+.sources-list .backref { margin-left: .5rem; text-decoration: none; opacity: .7; }
+
+.professional-content h1.md-h1,
+.professional-content h2.md-h2 {
+  margin-top: 1rem;
+  margin-bottom: 0.5rem;
+}
+
+.professional-content ul,
+.professional-content ol {
+  margin: 0.25rem 0 0.75rem 1.25rem;
+}
+
+.professional-content li {
+  margin: 0.2rem 0;
+}
+
+/* Confidence Indicator */
+.message .confidence-indicator {
+  margin-top: 8px;
+  font-size: var(--font-size-sm, 0.875rem);
+  color: var(--color-muted, #6b7280);
+}
 
 /* Responsive Design - Mobile Portrait */
 @media (max-width: 480px) {
