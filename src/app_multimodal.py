@@ -293,30 +293,26 @@ def _clean_and_format_content(content):
     return content
 
 def format_professional_sources(sources):
-    """Format sources professionally for NCDOT presentation"""
+    """Format sources professionally with deep links and page numbers for UI."""
     formatted = []
     for source in sources:
-        metadata = source.get('metadata', {})
-        # Extract proper document title
-        title = extract_document_title(metadata)
-        pages = str(metadata.get('page_number', 'N/A'))
+        md = source.get('metadata', {})
+        title = extract_document_title(md)
         relevance = int((source.get('similarity_score', 0) * 100))
         formatted.append({
             "title": title,
-            "pages": pages,
-            "document_type": metadata.get('source_type', 'Policy Document'),
+            "pages": str(md.get('page_number', 'N/A')),
+            "document_type": md.get('source_type', 'Policy Document'),
             "content": source.get('content', ''),
             "relevance": f"{relevance}%",
             "similarity_score": source.get('similarity_score', 0.0),
-            "file_path": metadata.get('source', ''),
-            # NEW: direct link and page number for viewer
-            "internal_link": f"/documents/{metadata.get('source', '')}" if metadata.get('source') else "",
-            "page_number": metadata.get('page_number', 1),
-            # NEW: optional hash for integrity checking
-            "sha256": metadata.get('content_hash', ""),
-            "document_id": metadata.get('document_id', ''),
-            "source": metadata.get('source', ''),
-            "chunk_id": metadata.get('chunk_id', ''),
+            "file_path": md.get('source', ''),
+            "internal_link": f"/documents/{md.get('source','')}" if md.get('source') else "",
+            "page_number": md.get('page_number', 1),
+            "sha256": md.get('content_hash', ""),
+            "document_id": md.get('document_id', ''),
+            "source": md.get('source', ''),
+            "chunk_id": md.get('chunk_id', ''),
             "year": "2024"
         })
     return formatted
