@@ -11,7 +11,7 @@
     <link rel="icon" type="image/x-icon" href="{{ url_for('static', filename='favicon.ico') }}">
 
     <!-- JavaScript Files -->
-    <script src="{{ url_for('static', filename='js/professional-content-renderer.js') }}?v=1.3.1" defer></script>
+    <script src="{{ url_for('static', filename='js/professional-content-renderer.js') }}?v=1.3.2" defer></script>
     <script src="{{ url_for('static', filename='js/integrated-search-bar.js') }}?v=pro120" defer></script>
     <script src="{{ url_for('static', filename='js/ui-shell.js') }}?v=1.0.0" defer></script>
     <script src="{{ url_for('static', filename='js/autocomplete.js') }}" defer></script>
@@ -27,6 +27,11 @@
     <meta property="og:title" content="TEPPL AI - Traffic Engineering Assistant">
     <meta property="og:description" content="Ask questions about Traffic Engineering policies, practices, and legal authority documents">
     <meta property="og:type" content="website">
+
+    <!-- Cache Control Meta Tags -->
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+    <meta http-equiv="Pragma" content="no-cache" />
+    <meta http-equiv="Expires" content="0" />
 </head>
 <body>
     <!-- App Header -->
@@ -184,6 +189,20 @@
                         <!-- Messages will be dynamically inserted here -->
                     </div>
                 </div>
+
+                <!-- Sources Drop-down (renderer expects these IDs) -->
+                <section id="sources-section" class="sources-section">
+                  <div class="section-header">
+                    <button id="sources-toggle" class="sources-dropdown-button">
+                      📚 <span id="sources-title">Sources</span>
+                      <span id="sources-count" class="pill">0</span>
+                      <span class="chevron">▾</span>
+                    </button>
+                  </div>
+                  <div id="sources-panel" class="sources-dropdown-panel hidden">
+                    <ul id="sources-list" class="sources-list"></ul>
+                  </div>
+                </section>
 
                 <!-- Enhanced Input Container with Integrated Search Options -->
                 <div class="input-container">

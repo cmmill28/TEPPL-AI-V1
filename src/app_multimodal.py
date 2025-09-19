@@ -103,72 +103,53 @@ def _extract_filename_from_path(source_path: str | None) -> str | None:
             return source_path.rsplit("\\", 1)[-1]
         return source_path
 
-def _format_sources_for_ui(sources: list[dict]) -> list[dict]:
-    """Format sources with clean titles and proper internal links for UI."""
-    formatted = []
-    for s in sources or []:
-        md = (s.get("metadata") or {})
-        title = (md.get("title")
-                 or (_extract_filename_from_path(md.get("source")) or "")
-                        .replace("_", " ").replace("-", " ").rsplit(".", 1)[0]
-                 or md.get("document_id")
-                 or "NCDOT TEPPL Document")
-        page = md.get("page_number", 1)
-        src_path = md.get("source") or ""
-        filename = _extract_filename_from_path(src_path)
-        internal_link = f"/documents/{filename}" if filename else ""
-        formatted.append({
-            "title": title,
-            "relevance": f"{round((s.get('similarity_score', 0.0) or 0.0) * 100)}%",
-            "similarity_score": s.get("similarity_score", 0.0),
-            "document_id": md.get("document_id", ""),
-            "chunk_id": md.get("chunk_id", ""),
-            "source": src_path,
-            "pages": md.get("pages") or page,
-            "internal_link": internal_link,
-            "page_number": page,
-            "file_path": filename or src_path,
-            "content": s.get("content", "")
-        })
-    return formatted
-
 def format_professional_sources(top_sources):
     """Normalize sources for professional UI (ensures internal_link + page_number)."""
+    def pick_path(md):
+        for k in ("source", "file_path", "filepath", "path", "relative_path", "document_path", "original_source"):
+            v = md.get(k)
+            if v:
+                return v
+        return ""
+
+    def pick_title(md, src_path):
+        title = (md.get("title") or md.get("document_title") or "").strip()
+        if title and title.lower() != "unknown document":
+            return title
+        if src_path:
+            base = os.path.basename(src_path)
+            nice = base.replace("_", " ").replace("-", " ")
+            return os.path.splitext(nice)[0] or "NCDOT TEPPL Document"
+        doc_id = (md.get("document_id") or md.get("chunk_id") or "").replace("_", " ").strip()
+        return doc_id or "NCDOT TEPPL Document"
+
     formatted = []
     for s in (top_sources or []):
         md = s.get("metadata", {}) or {}
-        title = (
-            md.get("title")
-            or (md.get("source") or "")
-            .split("/")[-1]
-            .replace("_", " ")
-            .replace("-", " ")
-            .rsplit(".", 1)[0]
-            or md.get("document_id")
-            or "NCDOT TEPPL Document"
-        )
-        raw_rel = s.get("relevance", s.get("similarity_score", 0.0))
-        if isinstance(raw_rel, float) and raw_rel <= 1.0:
-            rel_str = f"{round(raw_rel * 100)}%"
-        elif isinstance(raw_rel, (int, float)):
-            rel_str = f"{round(raw_rel)}%"
+        src_path = pick_path(md)
+        page = md.get("page_number") or md.get("pages") or 1
+        try:
+            page = int(str(page).strip().split("-")[0])
+        except Exception:
+            page = 1
+        raw_rel = s.get("similarity_score", s.get("relevance", 0))
+        if isinstance(raw_rel, (int, float)):
+            rel_pct = int(raw_rel * 100) if raw_rel <= 1 else int(raw_rel)
         else:
-            rel_str = str(raw_rel)
-        src_path = md.get("source", "")
-        page = md.get("page_number", 1)
-        formatted.append(
-            {
-                "title": title,
-                "relevance": rel_str,
-                "similarity_score": s.get("similarity_score", 0.0),
-                "document_id": md.get("document_id", ""),
-                "chunk_id": md.get("chunk_id", ""),
-                "source": src_path,
-                "pages": md.get("pages") or page,
-                "internal_link": f"/documents/{src_path}" if src_path else "",
-                "page_number": page,
-            }
-        )
+            rel_pct = 0
+        title = pick_title(md, src_path)
+        internal_link = f"/documents/{os.path.basename(src_path)}" if src_path else ""
+        formatted.append({
+            "title": title,
+            "relevance": f"{rel_pct}%",
+            "similarity_score": float(raw_rel) if isinstance(raw_rel, (int, float)) else 0.0,
+            "document_id": md.get("document_id", ""),
+            "chunk_id": md.get("chunk_id", ""),
+            "source": src_path,
+            "pages": page,
+            "page_number": page,
+            "internal_link": internal_link,
+        })
     return formatted
 
 def generate_professional_answer(sources, query: str) -> str:
@@ -502,23 +483,36 @@ def create_app() -> Flask:
             else:
                 return jsonify({"success": False, "error": "RAG system missing query interface"}), 500
 
-            ui_sources = _format_sources_for_ui(raw.get("sources", []))
-            answer = normalize_markdown(raw.get("answer", "") or "")
-            if not answer and ui_sources:
-                answer = generate_professional_answer(raw.get("sources", []), q)
+            raw_sources = raw.get("sources", []) or []
+            # Use hardened formatter (always supplies required fields)
+            formatted_sources = format_professional_sources(raw_sources)
 
+            answer = normalize_markdown(raw.get("answer", "") or "")
+            if not answer:
+                answer = generate_professional_answer(raw_sources, q)
+
+            # Short-answer escalation (<240 chars) -> generate comprehensive style
+            if (not answer) or len(answer) < 240:
+                try:
+                    # Reuse existing professional generator for fuller output
+                    answer = generate_professional_answer(raw_sources, q)
+                except Exception as e:
+                    logger.warning(f"Comprehensive fallback failed: {e}")
+
+            processing_time = time.time() - start
             return jsonify({
                 "success": True,
                 "answer": answer,
-                "confidence": 0.0,  # optional: compute from similarities if you want
-                "sources": ui_sources,
+                "confidence": 0.0,  # could be refined from similarities
+                "sources": formatted_sources,
                 "images": raw.get("images", []),
-                "processing_time": time.time() - start,
+                "processing_time": processing_time,
                 "query": q,
-                "source_count": len(ui_sources),
+                "source_count": len(formatted_sources),
                 "presentation_mode": "professional",
                 "content_type": "markdown"
             })
+
         except Exception as e:
             logger.exception("Query processing failed")
             return jsonify({
@@ -622,6 +616,12 @@ if __name__ == "__main__":
     else:
         print("❌ RAG system unavailable. Endpoints that require it will return errors.")
 
+    app.run(
+        debug=app.config["DEBUG"],
+        port=int(os.getenv("PORT", "5000")),
+        host=os.getenv("HOST", "127.0.0.1"),
+        threaded=True,
+    )
     app.run(
         debug=app.config["DEBUG"],
         port=int(os.getenv("PORT", "5000")),
